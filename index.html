@@ -323,8 +323,11 @@ table.plan td{padding:15px 16px;border-bottom:1px solid #E3ECF3;color:#2c3b4a;ve
   <button id="nextBtn" aria-label="Вперёд">&#8594;</button>
   <div class="counter" id="counter"></div>
   <button id="fsBtn" aria-label="На весь экран">&#9974;</button>
+  <button id="pdfBtn" aria-label="Скачать PDF" title="Скачать PDF">&#11015;&#65039;</button>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 const slides = document.querySelectorAll('.slide');
 const dotsWrap = document.getElementById('dots');
@@ -362,6 +365,61 @@ function toggleFullscreen(){
   }
 }
 document.getElementById('fsBtn').addEventListener('click', toggleFullscreen);
+
+async function exportPDF(){
+  const btn = document.getElementById('pdfBtn');
+  const original = btn.innerHTML;
+  const startIndex = i;
+  btn.disabled = true;
+
+  try{
+    if(!window.jspdf || !window.html2canvas){
+      throw new Error('libs-not-loaded');
+    }
+    const { jsPDF } = window.jspdf;
+    const w = document.documentElement.clientWidth;
+    const h = document.documentElement.clientHeight;
+    const orientation = w >= h ? 'landscape' : 'portrait';
+    const pdf = new jsPDF({ orientation, unit: 'px', format: [w, h] });
+    const scale = Math.min(2, window.devicePixelRatio || 1);
+
+    for(let idx = 0; idx < slides.length; idx++){
+      btn.innerHTML = (idx + 1) + '/' + slides.length;
+      go(idx);
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const canvas = await html2canvas(slides[idx], {
+        width: w, height: h, windowWidth: w, windowHeight: h,
+        scale, backgroundColor: '#ffffff', useCORS: true
+      });
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      if(idx > 0) pdf.addPage([w, h], orientation);
+      pdf.addImage(imgData, 'JPEG', 0, 0, w, h);
+    }
+
+    go(startIndex);
+    const blob = pdf.output('blob');
+    const filename = 'molodezhny-karyerny-hub.pdf';
+
+    const downloads = await (window.claude ? window.claude.use('downloads') : Promise.resolve(null));
+    if(downloads){
+      await downloads.save({ filename, data: blob });
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+  } catch(err){
+    console.error('PDF export failed:', err);
+    alert('Не удалось сформировать PDF. Попробуйте распечатать страницу как альтернативу (Ctrl+P / Cmd+P → «Сохранить как PDF»).');
+    go(startIndex);
+  } finally {
+    btn.innerHTML = original;
+    btn.disabled = false;
+  }
+}
+document.getElementById('pdfBtn').addEventListener('click', exportPDF);
 
 go(0);
 </script>
